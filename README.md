@@ -14,7 +14,7 @@ An End-to-End Graph Neural Network for Disease Gene Prioritization.
 
 ## Installation
 ### Using docker
-We provide a [Dockerfile](Dockerfile) to setup a runtime. To use is run
+We provide a [Dockerfile](Dockerfile) to setup a runtime. To use it run
 ```bash
 docker build -t gNetDGP .
 ```
