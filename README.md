@@ -26,7 +26,21 @@ conda activate gnetdgp_env
 ```
 
 ## Usage
+To get an overview use
+```bash
+python main.py --help
+```
+
+To list the available options on a specific command use
+```bash
+python main.py [COMMAND] --help
+```
 ### Train the generic model
+To train a new generic model use
+```bash
+python main.py generic-train
+```
+
 ### Train the specific model
 ### Predict using the generic model
 ### Predict using the specific model
