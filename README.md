@@ -5,7 +5,7 @@ An End-to-End Graph Neural Network for Disease Gene Prioritization.
 * [Installation](#installation)
     * [Docker](#using-docker)
     * [Conda](#using-conda)
-* [Usage](#usage)
+* [Test runs](#test-runs)
     * [Train the generic model](#train-the-generic-model)
     * [Predict using the generic model](#predict-using-the-generic-model)
     * [Train the specific model](#train-the-specific-model)
