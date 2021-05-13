@@ -50,6 +50,8 @@ Then run the command
 ```bash
 python main.py generic-predict test/example_input_generic_predict.tsv
 ```
+This will score the provided disease, gene tuples and return a augmented version of the input file with added scores.
+The result is stored in `--out_file`, the default is `./generic_predict_results.tsv` 
 
 To get a list of available genes in the model run
 ```bash
