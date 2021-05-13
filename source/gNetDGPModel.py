@@ -71,7 +71,6 @@ class gNetDGPModel(torch.nn.Module):
         disease_x_out = 0.7 * disease_x_out_0 + 0.2 * disease_x_out_1 + 0.1 * disease_x_out_2
 
         x_gene = gene_x_out[batch_idx[:, 0]]
-        print(x_gene)
         x_disease = disease_x_out[batch_idx[:, 1]]
 
         if self.mode == 'DGP':

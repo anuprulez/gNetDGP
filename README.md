@@ -25,7 +25,7 @@ conda env create -f environment.yml
 conda activate gnetdgp_env
 ```
 
-## Usage
+## Test runs
 To get an overview use
 ```bash
 python main.py --help
@@ -35,14 +35,33 @@ To list the available options on a specific command use
 ```bash
 python main.py [COMMAND] --help
 ```
+
 ### Train the generic model
 To train a new generic model use
 ```bash
 python main.py generic-train
 ```
 
+### Prioritization using the generic model
+Provide a input file of gene, disease tuples 
+like in the [test/example_input_generic_predict.tsv](test/example_input_generic_predict.tsv)
+
+Then run the command
+```bash
+python main.py generic-predict test/example_input_generic_predict.tsv
+```
+
+To get a list of available genes in the model run
+```bash
+python main.py generic-predict --get_available_genes
+```
+
+To get a list of available diseases in the model run
+```bash
+python main.py generic-predict --get_available_diseases
+```
+
 ### Train the specific model
-### Predict using the generic model
 ### Predict using the specific model
 
 

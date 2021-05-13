@@ -318,20 +318,102 @@ def generic_train(
 @click.option('--disease_net_hidden_dim', default=500)
 @click.option('--gene_dataset_root', default='./data/gene_net')
 @click.option('--disease_dataset_root', default='./data/disease_net')
-@click.option('--training_data_path', default='./data/training')
-@click.option('--results_storage', default='./out')
 @click.option('--model_path', default='./model/model_fold_1.ptm')
+@click.option('--out_file', default='./generic_predict_results.tsv')
+@click.option('--get_available_genes', is_flag=True, help='List available genes and exit')
+@click.option('--get_available_diseases', is_flag=True, help='List available diseases and exit')
+@click.argument('input_file')
 def generic_predict(
         fc_hidden_dim,
         gene_net_hidden_dim,
         disease_net_hidden_dim,
         gene_dataset_root,
         disease_dataset_root,
-        training_data_path,
-        results_storage,
         model_path,
+        out_file,
+        get_available_genes,
+        get_available_diseases,
+        input_file
 ):
-    raise NotImplemented
+    """Predict pseudo probabilities for disease-gene prioritization.
+
+    INPUT_FILE a file of tab separated gene, disease tuples. See example_predict_input.tsv
+    """
+    print('Import modules')
+    import torch
+    import torch.nn.functional as F
+    import numpy as np
+    import pandas as pd
+
+    print('Load the gene and disease graphs.')
+    gene_dataset = GeneNet(
+        root=gene_dataset_root,
+        humannet_version='FN',
+        features_to_use=['hpo'],
+        skip_truncated_svd=True
+    )
+
+    disease_dataset = DiseaseNet(
+        root=disease_dataset_root,
+        hpo_count_freq_cutoff=40,
+        edge_source='feature_similarity',
+        feature_source=['disease_publications'],
+        skip_truncated_svd=True,
+        svd_components=2048,
+        svd_n_iter=12
+    )
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    gene_net_data = gene_dataset[0]
+    disease_net_data = disease_dataset[0]
+    gene_net_data = gene_net_data.to(device)
+    disease_net_data = disease_net_data.to(device)
+
+    disease_id_index_feature_mapping = disease_dataset.load_disease_index_feature_mapping()
+    gene_id_index_feature_mapping = gene_dataset.load_node_index_mapping()
+
+    if get_available_genes:
+        all_genes = list(gene_id_index_feature_mapping.keys())
+        print('Available genes:')
+        for gene in all_genes:
+            print(gene)
+        return
+    if get_available_diseases:
+        all_diseases = list(disease_id_index_feature_mapping.keys())
+        print('Available diseases:')
+        for disease in all_diseases:
+            print(disease)
+        return
+
+    model = gNetDGPModel(
+        gene_feature_dim=gene_net_data.x.shape[1],
+        disease_feature_dim=disease_net_data.x.shape[1],
+        fc_hidden_dim=fc_hidden_dim,
+        gene_net_hidden_dim=gene_net_hidden_dim,
+        disease_net_hidden_dim=disease_net_hidden_dim,
+        mode='DGP'
+    ).to(device)
+
+    model.load_state_dict(torch.load(model_path, map_location=device))
+
+    # Create input vector
+    input_tuples = pd.read_csv(input_file, comment='#', sep='\t', header=None, names=['Gene ID', 'Omim Id'])
+    n = len(input_tuples)
+    x_in = np.ones((n, 2))  # will contain (gene_idx, disease_idx) tuples.
+    for i, row in input_tuples.iterrows():
+        x_in[i] = (gene_id_index_feature_mapping[int(row[0])], disease_id_index_feature_mapping[row[1]])
+
+    print('Predict')
+    model.eval()
+    with torch.no_grad():
+        predicted_probs = F.softmax(
+            model(gene_net_data, disease_net_data, x_in).clone().detach(), dim=1
+        )[:, -1:]
+    input_tuples['Score'] = predicted_probs.numpy()
+    input_tuples.to_csv(out_file, sep='\t', index=False)
+    print(f'Results (stored to {out_file}):')
+    print(input_tuples)
 
 
 @click.command()
