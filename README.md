@@ -5,7 +5,7 @@ An End-to-End Graph Neural Network for Disease Gene Prioritization.
 * [Installation](#installation)
     * [Docker](#using-docker)
     * [Conda](#using-conda)
-* [Test runs](#test-runs)
+* [Usage](#usage)
     * [Train the generic model](#train-the-generic-model)
     * [Predict using the generic model](#predict-using-the-generic-model)
     * [Train the specific model](#train-the-specific-model)
@@ -43,15 +43,18 @@ python main.py generic-train
 ```
 
 #### Predict using the generic model
-Provide a input file of gene, disease tuples 
-like in the [test/example_input_generic_predict.tsv](test/example_input_generic_predict.tsv)
+Provide an input file of gene, disease tuples 
+like in the [test/example_input_generic.tsv](test/example_input_generic.tsv)
 
 Then run the command
 ```bash
-python main.py generic-predict test/example_input_generic_predict.tsv
+python main.py generic-predict test/example_input_generi.tsv
 ```
 This will score the provided disease, gene tuples and return a augmented version of the input file with added scores.
 The result is stored in `--out_file`, the default is `./generic_predict_results.tsv` 
+
+The result is sorted by the predicted score by default. 
+If you want to preserve the input order add the option `--sort_result_by_score False`
 
 To get a list of available genes in the model run
 ```bash
@@ -64,8 +67,27 @@ python main.py generic-predict --get_available_diseases
 ```
 
 #### Train the specific model
-#### Predict using the specific model
+To train the specific model run
+```bash
+main.py specific-train 
+```
 
+#### Predict using the specific model
+To predict disease scores for the specific mode, provide a `input_file` with entrez gene IDs (one per line) like e.g.
+in [test/example_input_specific.tsv](test/example_input_specific.tsv). Use the `--model_path` flag 
+to provide a pretrained specific model.
+
+```bash
+main.py specific-predict ./test/example_input_specific.tsv --model_path /path/to/choosen/pretrained/specific/model.ptm
+```
+
+This will score the provided gene IDs to be associated with the disease the model was trained on and return a augmented
+version of the input file with added scores.
+
+The result is stored in `--out_file`, the default is `./generic_predict_results.tsv` 
+
+The result is sorted by the predicted score by default. 
+If you want to preserve the input order add the option `--sort_result_by_score False`
 
 ## Additional material
 The process of the reported experiments is documented in
