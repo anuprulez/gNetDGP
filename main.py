@@ -242,7 +242,9 @@ def generic_train(
                         break
 
             # Test the model for the current fold.
-            model.load_state_dict(torch.load(osp.join(model_tmp_storage, f'best_model_fold_{fold}.ptm')))
+            model.load_state_dict(
+                torch.load(osp.join(model_tmp_storage, f'best_model_fold_{fold}.ptm'), map_location=device)
+            )
             with torch.no_grad():
                 for modus in ['multi', 'mono']:
                     predicted_probs = F.log_softmax(
@@ -588,7 +590,7 @@ def specific_train(
 
     def train_disease_classification(model_parameter_file):
         # Load the pretrained model.
-        model.load_state_dict(torch.load(model_parameter_file))
+        model.load_state_dict(torch.load(model_parameter_file, map_location=device))
 
         # Set classification training hyperparameters.
         info_each_epoch = 1
@@ -626,7 +628,9 @@ def specific_train(
             for train_fold_index, test_fold_index in kf.split(x_disease_class):
                 fold += 1
                 print(f'Starting Fold: {fold}')
-                model.load_state_dict(torch.load(osp.join(model_tmp_storage, 'tmp_model_state.ptm')))
+                model.load_state_dict(
+                    torch.load(osp.join(model_tmp_storage, 'tmp_model_state.ptm'), map_location=device)
+                )
                 model.mode = 'Classify'
                 # Split into train and validation.
                 x_test = x_disease_class[test_fold_index]
