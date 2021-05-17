@@ -318,7 +318,7 @@ def generic_train(
 @click.option('--disease_net_hidden_dim', default=500)
 @click.option('--gene_dataset_root', default='./data/gene_net')
 @click.option('--disease_dataset_root', default='./data/disease_net')
-@click.option('--model_path', default='./model/model_fold_1.ptm')
+@click.option('--model_path', default='./model/generic_pre_trained_model_fold_1.ptm')
 @click.option('--out_file', default='./generic_predict_results.tsv')
 @click.option('--get_available_genes', is_flag=True, help='List available genes and exit')
 @click.option('--get_available_diseases', is_flag=True, help='List available diseases and exit')
@@ -417,8 +417,311 @@ def generic_predict(
 
 
 @click.command()
-def specific_train():
-    raise NotImplemented
+@click.option('--fc_hidden_dim', default=3000)
+@click.option('--gene_net_hidden_dim', default=830)
+@click.option('--disease_net_hidden_dim', default=500)
+@click.option('--folds', default=5)
+@click.option('--max_epochs', default=500)
+@click.option('--early_stopping_window', default=20)
+@click.option('--lr_classification', default=0.00000347821, help='Learning rate')
+@click.option('--weight_decay_classification', default=0.5165618)
+@click.option('--gene_dataset_root', default='./data/gene_net')
+@click.option('--disease_dataset_root', default='./data/disease_net')
+@click.option('--training_data_path', default='./data/training')
+@click.option('--model_tmp_storage', default='/tmp')
+@click.option('--results_storage', default='./out')
+@click.option('--pretrained_model_path', default='./model/generic_pre_trained_model_fold_1.ptm')
+def specific_train(
+    fc_hidden_dim,
+    gene_net_hidden_dim,
+    disease_net_hidden_dim,
+    folds,
+    max_epochs,
+    early_stopping_window,
+    lr_classification,
+    weight_decay_classification,
+    gene_dataset_root,
+    disease_dataset_root,
+    training_data_path,
+    model_tmp_storage,
+    results_storage,
+    pretrained_model_path
+):
+    print('Import modules')
+    import gzip
+    import pickle
+    import os.path as osp
+    import sklearn.metrics as skmetrics
+    import torch
+    import pandas as pd
+    import numpy as np
+    from sklearn.model_selection import KFold, train_test_split
+
+    print('Load the gene and disease graphs.')
+    gene_dataset = GeneNet(
+        root=gene_dataset_root,
+        humannet_version='FN',
+        features_to_use=['hpo'],
+        skip_truncated_svd=True
+    )
+
+    disease_dataset = DiseaseNet(
+        root=disease_dataset_root,
+        hpo_count_freq_cutoff=40,
+        edge_source='feature_similarity',
+        feature_source=['disease_publications'],
+        skip_truncated_svd=True,
+        svd_components=2048,
+        svd_n_iter=12
+    )
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    gene_net_data = gene_dataset[0]
+    disease_net_data = disease_dataset[0]
+    gene_net_data = gene_net_data.to(device)
+    disease_net_data = disease_net_data.to(device)
+
+    print('load training data.')
+    disease_genes = pd.read_table(
+        osp.join(training_data_path, 'genes_diseases.tsv'),
+        names=['EntrezGene ID', 'OMIM ID'],
+        sep='\t',
+        low_memory=False,
+        dtype={'EntrezGene ID': pd.Int64Dtype()}
+    )
+
+    disease_id_index_feature_mapping = disease_dataset.load_disease_index_feature_mapping()
+    gene_id_index_feature_mapping = gene_dataset.load_node_index_mapping()
+
+    all_genes = list(gene_id_index_feature_mapping.keys())
+    all_diseases = list(disease_id_index_feature_mapping.keys())
+
+    # 1. generate positive pairs.
+    # Filter the pairs to only include the ones where the corresponding nodes are available.
+    # i.e. gene_id should be in all_genes and disease_id should be in all_diseases.
+    positives = disease_genes[
+        disease_genes["OMIM ID"].isin(all_diseases) & disease_genes["EntrezGene ID"].isin(all_genes)
+        ]
+    covered_diseases = list(set(positives['OMIM ID']))
+    covered_genes = list(set(positives['EntrezGene ID']))
+
+    # 2. Generate negatives.
+    # Pick equal amount of pairs not in the positives.
+    negatives_list = []
+    while len(negatives_list) < len(positives):
+        gene_id = all_genes[np.random.randint(0, len(all_genes))]
+        disease_id = covered_diseases[np.random.randint(0, len(covered_diseases))]
+        if not ((positives['OMIM ID'] == disease_id) & (positives['EntrezGene ID'] == gene_id)).any():
+            negatives_list.append([disease_id, gene_id])
+    negatives = pd.DataFrame(np.array(negatives_list), columns=['OMIM ID', 'EntrezGene ID'])
+
+    # Disease classification data preparation.
+    # Load the disease classes.
+    GENE_CLASS_LABELS_FILE = osp.join(training_data_path, 'extracted_disease_class_assignments.tsv')
+    # Load the training data
+    disease_class_training_data = pd.read_csv(GENE_CLASS_LABELS_FILE, sep='\t')
+    # drop duplicates
+    unique_labeled_disease_class_genes = disease_class_training_data.drop_duplicates()
+    gene_id_node_index_df = pd.DataFrame(
+        data=[(gene_id, node_index) for gene_id, node_index in gene_id_index_feature_mapping.items()],
+        columns=['gene_id', 'node_index'])
+    disease_id_node_index_df = disease_id_node_index_df = pd.DataFrame(
+        data=[(disease_id, node_index) for disease_id, node_index in disease_id_index_feature_mapping.items()],
+        columns=['disease_id', 'disease_node_index']
+    )
+
+    # Create the gene index
+    # Join in the gene node indexes
+    disease_class_training_data = pd.merge(
+        unique_labeled_disease_class_genes,
+        gene_id_node_index_df,
+        left_on='gene_id',
+        right_on='gene_id',
+        validate='many_to_many'
+    )
+
+    disease_class_counts = disease_class_training_data['disease_class'].value_counts()
+    disease_class_target_classes = [
+        'Ophthamological',
+        'Connective tissue',
+        'Endocrine',
+        'Skeletal',
+        'Metabolic',
+        'Cardiovascular',
+        'Dermatological',
+        'Renal',
+        'Hematological',
+        'Immunological',
+        'Muscular',
+        'Developmental'
+    ]
+
+    def get_negative_disease_class_data(pos_class, n):
+        # n = n // 2
+        return disease_class_training_data[disease_class_training_data['disease_class'] != pos_class].sample(
+            n=n,
+            random_state=42
+        )
+
+    def get_positive_disease_class_data(pos_class):
+        return disease_class_training_data[disease_class_training_data['disease_class'] == pos_class].copy()
+
+    def get_disease_class_training_data(pos_class):
+        pos = get_positive_disease_class_data(pos_class)
+        pos['label'] = 1
+        neg = get_negative_disease_class_data(pos_class, len(pos))
+        neg['label'] = 0
+        data = pd.concat([pos, neg], ignore_index=True)
+        x = data.iloc[:, 3:].values
+        y = data.iloc[:, 4:5].values.ravel()
+
+        return x, torch.tensor(y), data
+
+    model = gNetDGPModel(
+        gene_feature_dim=gene_net_data.x.shape[1],
+        disease_feature_dim=disease_net_data.x.shape[1],
+        fc_hidden_dim=fc_hidden_dim,
+        gene_net_hidden_dim=gene_net_hidden_dim,
+        disease_net_hidden_dim=disease_net_hidden_dim
+    ).to(device)
+
+    def train_disease_classification(model_parameter_file):
+        # Load the pretrained model.
+        model.load_state_dict(torch.load(model_parameter_file))
+
+        # Set classification training hyperparameters.
+        info_each_epoch = 1
+        final_disease_class_metrics = dict()
+        losses = {
+            'train': [],
+            'val': [],
+            'AUC': 0,
+            'TPR': None,
+            'FPR': None
+        }
+        for disease_class in disease_class_target_classes:
+            for fold in range(folds):
+                losses[f'train_disease_class_{disease_class}_{fold}'] = []
+                losses[f'val_disease_class_{disease_class}_{fold}'] = []
+                final_disease_class_metrics[f'{disease_class}_{fold}'] = {
+                    'roc_auc': 0,
+                    'pr_auc': 0,
+                    'fmax': 0
+                }
+
+        torch.save(model.state_dict(), osp.join(model_tmp_storage, 'tmp_model_state.ptm'))
+        class_count = 0
+        for disease_class in disease_class_target_classes:
+            class_count += 1
+            print(
+                f'Evaluate pretrained model on disease class {disease_class} ({class_count}/{len(disease_class_target_classes)})')
+            x_disease_class, y_disease_class, _ = get_disease_class_training_data(disease_class)
+            optimizer_disease_class = torch.optim.Adam(model.parameters(), lr=lr_classification,
+                                                       weight_decay=weight_decay_classification)
+            criterion_disease_class = torch.nn.CrossEntropyLoss()
+
+            kf = KFold(n_splits=folds, shuffle=True, random_state=42)
+            fold = -1
+            for train_fold_index, test_fold_index in kf.split(x_disease_class):
+                fold += 1
+                print(f'Starting Fold: {fold}')
+                model.load_state_dict(torch.load(osp.join(model_tmp_storage, 'tmp_model_state.ptm')))
+                model.mode = 'Classify'
+                # Split into train and validation.
+                x_test = x_disease_class[test_fold_index]
+                y_test = y_disease_class[test_fold_index].to(device)
+                id_tr, id_val = train_test_split(range(x_disease_class[train_fold_index].shape[0]), test_size=0.1,
+                                                 random_state=42)
+                x_train = x_disease_class[train_fold_index][id_tr]
+                y_train = y_disease_class[train_fold_index][id_tr].to(device)
+                x_val = x_disease_class[train_fold_index][id_val]
+                y_val = y_disease_class[train_fold_index][id_val].to(device)
+
+                best_val_loss = 1e80
+                for epoch in range(max_epochs):
+                    model.train()
+
+                    batch_size = 16
+                    permutation = torch.randperm(x_train.shape[0])
+                    # train
+                    loss_items = []
+                    for i in range(0, x_train.shape[0], batch_size):
+                        batch_indices = permutation[i:i + batch_size]
+                        batch_x, batch_y = x_train[batch_indices].reshape(-1, 2), y_train[batch_indices]
+
+                        optimizer_disease_class.zero_grad()
+                        out = model(gene_net_data, disease_net_data, batch_x)
+                        loss = criterion_disease_class(out, batch_y)
+                        loss.backward()
+                        optimizer_disease_class.step()
+                        loss_items.append(loss.item())
+                    losses[f'train_disease_class_{disease_class}_{fold}'].append(np.mean(loss_items))
+
+                    # validation
+                    with torch.no_grad():
+                        model.eval()
+                        out = model(gene_net_data, disease_net_data, x_val)
+                        loss = criterion_disease_class(out, y_val)
+                        losses[f'val_disease_class_{disease_class}_{fold}'].append(loss.item())
+
+                        if epoch % info_each_epoch == 0:
+                            print(
+                                'Epoch {}, train_loss: {:.4f}, val_loss: {:.4f}'.format(
+                                    epoch, losses[f'train_disease_class_{disease_class}_{fold}'][epoch],
+                                    losses[f'val_disease_class_{disease_class}_{fold}'][epoch]
+                                )
+                            )
+                        if loss < best_val_loss:
+                            best_val_loss = loss
+                            torch.save(
+                                model.state_dict(),
+                                osp.join(
+                                    results_storage,
+                                    f'best_specific_model_{disease_class}_fold_{fold}.ptm'
+                                )
+                            )
+
+                    # Early stopping
+                    if epoch > early_stopping_window:
+                        # Stop if validation error did not decrease
+                        # w.r.t. the past early_stopping_window consecutive epochs.
+                        last_window_losses = losses[f'val_disease_class_{disease_class}_{fold}'][
+                                             epoch - early_stopping_window:epoch]
+                        if losses[f'val_disease_class_{disease_class}_{fold}'][-1] > max(last_window_losses):
+                            print('Early Stopping!')
+                            break
+
+                # Test the disease classification model for current fold.
+                print(f'Test the model on fold {fold}:')
+                with torch.no_grad():
+                    y_score = model(gene_net_data, disease_net_data, x_test)[:, 1].cpu().detach().numpy()
+                    y = y_test.cpu().detach().numpy()
+                    final_disease_class_metrics[f'{disease_class}_{fold}']['roc_auc'] = skmetrics.roc_auc_score(
+                        y,
+                        y_score
+                    )
+                    precision, recall, thresholds = skmetrics.precision_recall_curve(y, y_score)
+                    final_disease_class_metrics[f'{disease_class}_{fold}']['pr_auc'] = skmetrics.auc(
+                        recall,
+                        precision
+                    )
+                    final_disease_class_metrics[f'{disease_class}_{fold}']['fmax'] = (
+                                (2 * precision * recall) / (precision + recall + 0.00001)).max()
+                    print(final_disease_class_metrics[f'{disease_class}_{fold}'])
+        return final_disease_class_metrics
+
+    all_final_disease_class_metrics = []
+    results_file = osp.join(results_storage, f'specific_mode_results.gz')
+    print('############################################################')
+    print(f'# START TRAINING USING PRETRAINED MODEL: {pretrained_model_path} #')
+    print('############################################################')
+    results = train_disease_classification(
+        pretrained_model_path
+    )
+    all_final_disease_class_metrics.append(results)
+    with gzip.open(results_file, mode='wb') as f:
+        pickle.dump(all_final_disease_class_metrics, f)
 
 
 @click.command()
