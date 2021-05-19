@@ -26,7 +26,7 @@ conda activate gnetdgp_env
 ```
 
 ## Usage
-To get an overview use
+To get an overview of available commands use
 ```bash
 python main.py --help
 ```
@@ -40,6 +40,11 @@ python main.py [COMMAND] --help
 To train a new generic model use
 ```bash
 python main.py generic-train
+```
+
+For available options run
+```bash
+python main.py generic-train --help
 ```
 
 #### Predict using the generic model
@@ -56,6 +61,8 @@ The result is stored in `--out_file`, the default is `./generic_predict_results.
 The result is sorted by the predicted score by default. 
 If you want to preserve the input order add the option `--sort_result_by_score False`
 
+To use a specific pre-trained model for the prediction add the option `--model_path /path/to/model.ptm`.
+
 To get a list of available genes in the model run
 ```bash
 python main.py generic-predict --get_available_genes
@@ -70,6 +77,11 @@ python main.py generic-predict --get_available_diseases
 To train the specific model run
 ```bash
 main.py specific-train 
+```
+
+For available options run
+```bash
+python main.py specific-train --help
 ```
 
 #### Predict using the specific model
