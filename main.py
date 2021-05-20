@@ -21,7 +21,7 @@ def cli():
 @click.option('--weight_decay', default=0.15)
 @click.option('--gene_dataset_root', default='./data/gene_net')
 @click.option('--disease_dataset_root', default='./data/disease_net')
-@click.option('--training_data_path', default='./data/training')
+@click.option('--training_data_path', default='./data/training/genes_diseases.tsv')
 @click.option('--model_tmp_storage', default='/tmp')
 @click.option('--results_storage', default='./out')
 @click.option('--experiment_slug', default='train_generic')
@@ -82,7 +82,7 @@ def generic_train(
 
     print('Generate training data.')
     disease_genes = pd.read_table(
-        osp.join(training_data_path, 'genes_diseases.tsv'),
+        training_data_path,
         names=['EntrezGene ID', 'OMIM ID'],
         sep='\t',
         low_memory=False,
@@ -435,7 +435,8 @@ def generic_predict(
 @click.option('--weight_decay_classification', default=0.5165618)
 @click.option('--gene_dataset_root', default='./data/gene_net')
 @click.option('--disease_dataset_root', default='./data/disease_net')
-@click.option('--training_data_path', default='./data/training')
+@click.option('--training_disease_genes_path', default='./data/training/genes_diseases.tsv')
+@click.option('--training_disease_class_assignments_path', default='./data/training/extracted_disease_class_assignments.tsv')
 @click.option('--model_tmp_storage', default='/tmp')
 @click.option('--results_storage', default='./out')
 @click.option('--pretrained_model_path', default='./model/generic_pre_trained_model_fold_1.ptm')
@@ -450,7 +451,8 @@ def specific_train(
     weight_decay_classification,
     gene_dataset_root,
     disease_dataset_root,
-    training_data_path,
+    training_disease_genes_path,
+    training_disease_class_assignments_path,
     model_tmp_storage,
     results_storage,
     pretrained_model_path
@@ -492,7 +494,7 @@ def specific_train(
 
     print('load training data.')
     disease_genes = pd.read_table(
-        osp.join(training_data_path, 'genes_diseases.tsv'),
+        training_disease_genes_path,
         names=['EntrezGene ID', 'OMIM ID'],
         sep='\t',
         low_memory=False,
@@ -526,9 +528,7 @@ def specific_train(
 
     # Disease classification data preparation.
     # Load the disease classes.
-    GENE_CLASS_LABELS_FILE = osp.join(training_data_path, 'extracted_disease_class_assignments.tsv')
-    # Load the training data
-    disease_class_training_data = pd.read_csv(GENE_CLASS_LABELS_FILE, sep='\t')
+    disease_class_training_data = pd.read_csv(training_disease_class_assignments_path, sep='\t')
     # drop duplicates
     unique_labeled_disease_class_genes = disease_class_training_data.drop_duplicates()
     gene_id_node_index_df = pd.DataFrame(

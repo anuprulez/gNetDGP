@@ -39,7 +39,7 @@ python main.py [COMMAND] --help
 #### Train the generic model
 To train a new generic model use
 ```bash
-python main.py generic-train
+python main.py generic-train --training_data_path ./data/training/genes_diseases.tsv
 ```
 
 For available options run
@@ -76,7 +76,7 @@ python main.py generic-predict --get_available_diseases
 #### Train the specific model
 To train the specific model run
 ```bash
-main.py specific-train 
+main.py specific-train --training_disease_genes_path ./data/training/genes_diseases.tsv --training_disease_class_assignments_path ./data/training/extracted_disease_class_assignments.tsv
 ```
 
 For available options run
