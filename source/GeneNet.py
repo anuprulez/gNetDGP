@@ -339,7 +339,7 @@ class GeneNet(InMemoryDataset):
             for gene_link in gene_links_file.readlines():
                 if gene_link.startswith('#'):
                     continue
-                source, target, score = [s.strip() for s in gene_link.split()]
+                source, target = [s.strip() for s in gene_link.split()]
                 if source not in node_index_mapping:
                     node_index_mapping[source] = len(node_index_mapping)
                 if target not in node_index_mapping:
@@ -355,6 +355,7 @@ class GeneNet(InMemoryDataset):
         with open(self.processed_paths[self.ProcessedFileEnum.gene_id_data_index], mode='r') as file:
             next(file)
             for line in file.readlines():
+                print(line)
                 gene_id, index = [int(s.strip()) for s in line.split('\t')]
                 node_index_mapping[gene_id] = index
 
